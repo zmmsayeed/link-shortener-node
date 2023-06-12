@@ -5,6 +5,7 @@ const useragent = require('useragent');
 const dotenv = require('dotenv');
 const cheerio = require('cheerio');
 const axios = require('axios');
+const { v4: uuid } = require('uuid');
 
 // const metascraper = require('metascraper')([
 //     require('metascraper-title')(),
@@ -54,42 +55,51 @@ class UrlShortenerApp {
         const { longUrl, slug } = req.body;
       
         try {
-          let generatedSlug = slug || shortid.generate();
-          let existingSlug = null;
-      
-          if (slug) {
+            let generatedSlug = slug || shortid.generate();
+            let existingSlug = null;
+        
+            if (slug) {
             existingSlug = await Slug.findOne({ slug });
             if (existingSlug) {
-              return res.status(400).json({ error: 'Slug already exists' });
+                return res.status(400).json({ error: 'Slug already exists' });
             }
-          }
-      
-          let isUnique = false;
-          while (!isUnique) {
-            existingSlug = await Slug.findOne({ slug: generatedSlug });
-            if (existingSlug) {
-              generatedSlug = shortid.generate();
-            } else {
-              isUnique = true;
             }
-          }
-      
-          const newSlug = await Slug.create({ slug: generatedSlug });
-      
-          const newUrl = await Url.create({ slug: generatedSlug, longUrl });
-          res.json({ shortUrl: `http://your-domain.com/${generatedSlug}` });
+        
+            let isUnique = false;
+            while (!isUnique) {
+                existingSlug = await Slug.findOne({ slug: generatedSlug });
+                if (existingSlug) {
+                    generatedSlug = shortid.generate();
+                } else {
+                    isUnique = true;
+                }
+            }
+        
+            let uid = uuid();
+            const newSlug = await Slug.create({ 
+                slug: generatedSlug,
+                urlId: uid
+            });
+        
+            const newUrl = await Url.create({ 
+                _id: uid,
+                slug: newSlug._id, 
+                longUrl 
+            });
+            res.json({ shortUrl: `http://your-domain.com/${generatedSlug}` });
         } catch (err) {
-          console.error(err);
-          res.status(500).json({ error: 'Internal server error' });
+            console.error(err);
+            res.status(500).json({ error: 'Internal server error' });
         }
     } 
     
     async redirectUrl(req, res) {
         const { slug } = req.params;
-        console.log("slug: " + slug + " --------------------------------------")
+        // console.log("slug: " + slug + " --------------------------------------")
         
         try {
-            const url = await Url.findOne({ slug });
+            const foundSlug = await Slug.findOne({ slug });
+            const url = await Url.findOne({ _id: foundSlug.urlId });
             
             if (url) {
                 url.visitCount += 1;
@@ -102,6 +112,7 @@ class UrlShortenerApp {
                 
                 await url.save();
                 
+                console.log("Redirecting to: " + url.longUrl)
                 res.redirect(url.longUrl);
             } else {
                 res.status(404).json({ error: 'URL not found' });
